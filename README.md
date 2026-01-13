@@ -1,6 +1,4 @@
-# Linux-Debian-Netboot-Auto-Install
-
-一键网络重装 Debian 12 纯净系统
+# 一键网络重装 Debian 12 纯净系统
 
 ## 实现方法  
 
@@ -50,5 +48,10 @@
 ## 执行
 
 ```shell
-curl https://raw.githubusercontent.com/qRuWGQ/Linux-Debian-Netboot-Auto-Install/main/install.sh | bash
+curl https://raw.githubusercontent.com/qRuWGQ/netinstall/main/install.sh | bash
+```
+
+国内网络环境可以尝试CDN链接：
+```shelll
+curl -L https://cdn.jsdelivr.net/gh/qRuWGQ/netinstall@main/install.sh | bash
 ```
