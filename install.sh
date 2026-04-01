@@ -362,28 +362,63 @@ d-i finish-install/reboot_in_progress note
 EOF
 
   local temp_dir
-  # 创建一个临时目录来处理initrd
-  temp_dir=$(mktemp -d)
-  # 确保在脚本退出时（无论成功或失败）都清理临时目录
-  trap 'rm -rf -- "$temp_dir"' EXIT
+  local preseed_file="/root/preseed.cfg"
 
-  cd "$temp_dir" || error_exit "无法进入临时目录 $temp_dir"
+  # 生成 preseed 配置到独立文件
+  echo "$preseed" > "$preseed_file"
 
-  echo
-  echo
-  echo '解包中...'
-  gzip -dc /root/initrd.gz | cpio -idmu && echo '解包完成' && rm -fr /root/initrd.gz
-  echo
-  echo '生成 pressed 配置并写入'
-  echo "$preseed" > preseed.cfg
-  echo
-  echo '重新归档压缩中...'
-  find . | cpio -H newc --create | gzip -9 > "${conf["mirror_dir"]}"/initrd.gz && echo '归档压缩完成'
+  # 验证生成成功
+  if [[ ! -s "$preseed_file" ]]; then
+    error_exit "preseed.cfg 生成失败"
+  fi
 
-  # 返回原始目录并解除trap
-  cd - > /dev/null
+  # 创建临时目录
+  temp_dir=$(mktemp -d) || error_exit "无法创建临时目录"
+  trap 'cd / && rm -rf -- "$temp_dir"' EXIT
+
+  cd "$temp_dir" || error_exit "无法进入临时目录"
+
+  echo "正在解压 initrd.gz..."
+  if ! gzip -dc /root/initrd.gz | cpio -idmu 2>/dev/null; then
+    error_exit "initrd.gz 解压失败"
+  fi
+
+  # 验证解压完整性
+  if [[ ! -f init ]]; then
+    error_exit "initrd 损坏（缺少 init 文件）"
+  fi
+
+  echo "正在注入 preseed.cfg..."
+  cp "$preseed_file" ./preseed.cfg || error_exit "preseed.cfg 注入失败"
+
+  # 验证注入成功
+  if [[ ! -s preseed.cfg ]]; then
+    error_exit "preseed.cfg 注入后为空"
+  fi
+
+  # 设置正确权限
+  chmod 644 preseed.cfg
+
+  echo "正在重新打包 initrd..."
+  if ! find . -print0 | cpio --null -H newc --create 2>/dev/null | gzip -9 > "${conf["mirror_dir"]}"/initrd.gz; then
+    error_exit "initrd 重新打包失败"
+  fi
+
+  # 验证生成文件大小
+  local new_size=$(stat -c%s "${conf["mirror_dir"]}"/initrd.gz 2>/dev/null || echo 0)
+  if [[ "$new_size" -lt 10000000 ]]; then
+    error_exit "生成的 initrd.gz 异常（仅 $new_size 字节）"
+  fi
+
+  echo "initrd 处理完成（大小: $new_size 字节）"
+
+  # 清理
+  cd /
   trap - EXIT
   rm -rf -- "$temp_dir"
+
+  # 保留原始 initrd.gz 备份
+  # rm -f /root/initrd.gz  # 注释掉删除原始文件的操作
 }
 
 # 设置镜像
@@ -498,7 +533,7 @@ exec tail -n +3 \$0
 # the 'exec tail' line above.
 menuentry 'debian-netboot-install' {
 search --fs-uuid --set=root ${conf["grub_uuid"]}
-linux ${conf["grub_boot_path"]}debian-netboot-install/linux auto=true priority=critical root=/dev/ram0
+linux ${conf["grub_boot_path"]}debian-netboot-install/linux auto=true priority=critical preseed/file=/preseed.cfg
 initrd ${conf["grub_boot_path"]}debian-netboot-install/initrd.gz
 }
 EOF
