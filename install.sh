@@ -94,7 +94,7 @@ function gen_network_conf() {
   # 获取默认网口名称
   if [[ ${conf["net_interface"]} == "auto" ]] || [[ -z ${conf["net_interface"]} ]]; then
     # 尝试通过路由获取网口名称
-    conf["net_interface"]=$(ip -o -4 route get 1.1.1.1 2> /dev/null | awk '{print $5}')
+    conf["net_interface"]=$(ip -o -4 route get 223.5.5.5 2> /dev/null | awk '{print $5}')
 
     # 尝试通过默认路由获取网口名称
     if [[ -z ${conf["net_interface"]} ]]; then
@@ -128,7 +128,11 @@ function gen_network_conf() {
 
   # 使用 ip 命令获取子网掩码（CIDR 格式）
   local prefix
-  prefix=$(ip -o -4 addr show ${conf["net_interface"]} 2> /dev/null | awk '{print $4}' | cut -d/ -f2)
+  prefix=$(ip -o -4 addr show "${conf["net_interface"]}" 2>/dev/null \
+    | grep -v secondary \
+    | head -n1 \
+    | grep -oP 'inet \K[\d.]+/\d+' \
+    | cut -d/ -f2)
 
   if [[ -z "$prefix" ]]; then
     error_exit "无法获取子网掩码"
@@ -316,7 +320,7 @@ d-i mirror/http/proxy string
 # 分区设置
 # 不再指定设备名，采用默认搜索机制
 # 如果指定设备名，某些服务商的奇怪设置可能会导致无法找到设备，导致出现以下问题：
-# No root file system 
+# No root file system
 # No root file system is defined.
 # Please correct this from the partitioning menu.
 
@@ -528,6 +532,10 @@ EOF
 # 启动函数
 function start() {
   clear
+
+  if [[ $EUID -ne 0 ]]; then
+    error_exit "此脚本必须以 root 权限运行"
+  fi
 
   echo
   echo
